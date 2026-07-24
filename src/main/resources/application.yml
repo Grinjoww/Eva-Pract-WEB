@@ -1,0 +1,59 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: mercado-quevedo-inventario
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/mercado_quevedo
+    username: postgres
+    password: postgres
+    driver-class-name: org.postgresql.Driver
+
+  # El esquema (schema.sql) y los usuarios semilla (data.sql) se ejecutan
+  # SIEMPRE al arrancar, incluso contra PostgreSQL externo (no solo en BD
+  # embebida). Son idempotentes (IF NOT EXISTS / ON CONFLICT DO NOTHING),
+  # por lo que reiniciar el contenedor sin recrear el volumen no falla.
+  sql:
+    init:
+      mode: always
+
+  jpa:
+    hibernate:
+      # El esquema NO lo genera Hibernate: lo crea schema.sql. Hibernate
+      # solo valida que las entidades coincidan con las tablas reales.
+      ddl-auto: validate
+    show-sql: true
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      timeout: 60000
+
+  cache:
+    type: redis
+    redis:
+      time-to-live: 600000       # 10 minutos, en milisegundos
+      cache-null-values: false
+
+# Configuracion JWT
+# IMPORTANTE: no hay valor por defecto a proposito. El secreto SOLO se lee
+# de la variable de entorno JWT_SECRET (ver .env.example). Si no esta
+# definida, el arranque falla explicitamente en vez de exponer un secreto
+# embebido en el repositorio.
+jwt:
+  secret: ${JWT_SECRET}
+  expiration-ms: ${JWT_EXPIRATION_MS:3600000}   # 1 hora
+
+logging:
+  level:
+    com.quevedo.mercado.inventario: DEBUG
+    org.springframework.security: INFO
+    org.springframework.cache: DEBUG
