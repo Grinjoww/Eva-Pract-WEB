@@ -1,0 +1,145 @@
+### =========================================================================
+### Sistema de Inventario - Mercado Municipal de Quevedo
+### Coleccion de peticiones HTTP (compatible con el HTTP Client de IntelliJ
+### IDEA y con la extension "REST Client" de VS Code).
+###
+### Uso: ejecuta primero los dos logins, copia el "token" de cada respuesta
+### y reemplaza los placeholders TOKEN_ADMIN / TOKEN_USER en las peticiones
+### siguientes antes de ejecutarlas.
+### =========================================================================
+
+@baseUrl = http://localhost:8080/api/v1
+
+
+### 1. Login como admin (ROLE_ADMIN + ROLE_USER) -> 200 OK
+# Copia el valor de "data.token" de la respuesta en TOKEN_ADMIN.
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "username": "admin",
+  "password": "Admin123*"
+}
+
+
+### 2. Login como usuario de solo lectura (ROLE_USER) -> 200 OK
+# Copia el valor de "data.token" de la respuesta en TOKEN_USER.
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "username": "usuario",
+  "password": "Usuario123*"
+}
+
+
+### =========================================================================
+### Requisito 1: Listado paginado (GET) - requiere ROLE_USER
+### =========================================================================
+
+### 3. Listar productos, pagina 0, tamano 10, ordenado por nombre -> 200 OK
+# Contrato esperado: { success, data: [...], message, meta: { page, size, totalElements, totalPages } }
+GET {{baseUrl}}/productos?page=0&size=10&sort=nombre,asc
+Authorization: Bearer TOKEN_USER
+
+
+### =========================================================================
+### Requisito 2: Creacion validada (POST) - requiere ROLE_ADMIN
+### =========================================================================
+
+### 4. Crear un producto valido -> 201 Created
+POST {{baseUrl}}/productos
+Authorization: Bearer TOKEN_ADMIN
+Content-Type: application/json
+
+{
+  "nombre": "Arroz flor",
+  "categoria": "Granos",
+  "stock": 120,
+  "precio": 0.95
+}
+
+
+### 5. Crear un producto con datos invalidos -> 400 Bad Request
+# Contrato esperado: { success:false, data:null, message, errors: [ {field, message}, ... ] }
+POST {{baseUrl}}/productos
+Authorization: Bearer TOKEN_ADMIN
+Content-Type: application/json
+
+{
+  "nombre": "",
+  "categoria": "Granos",
+  "stock": -5,
+  "precio": 0
+}
+
+
+### =========================================================================
+### Requisito 3: Eliminacion logica (DELETE) - requiere ROLE_ADMIN
+### =========================================================================
+
+### 6. Eliminar (soft delete) un producto existente -> 200 OK
+# Reemplaza el "1" por un id real devuelto por la peticion 4.
+DELETE {{baseUrl}}/productos/1
+Authorization: Bearer TOKEN_ADMIN
+
+
+### 7. Eliminar un producto que no existe -> 404 Not Found
+DELETE {{baseUrl}}/productos/9999
+Authorization: Bearer TOKEN_ADMIN
+
+
+### =========================================================================
+### Requisito 4: Cache-aside con Redis
+### =========================================================================
+
+### 8. Cache MISS: primera consulta de esta pagina/orden (revisar logs de la
+### app: debe aparecer "Cache MISS -> consultando productos activos...")
+GET {{baseUrl}}/productos?page=0&size=5&sort=id,asc
+Authorization: Bearer TOKEN_USER
+
+### 9. Cache HIT: repetir la MISMA consulta; NO debe volver a aparecer la
+### linea de log de "Cache MISS" (se sirvio desde Redis).
+GET {{baseUrl}}/productos?page=0&size=5&sort=id,asc
+Authorization: Bearer TOKEN_USER
+
+### 10. Crear un producto invalida el cache (@CacheEvict) -> la siguiente
+### consulta a la peticion 8 debe volver a dar Cache MISS y reflejar el nuevo dato.
+POST {{baseUrl}}/productos
+Authorization: Bearer TOKEN_ADMIN
+Content-Type: application/json
+
+{
+  "nombre": "Panela",
+  "categoria": "Granos",
+  "stock": 30,
+  "precio": 1.10
+}
+
+
+### =========================================================================
+### Requisito 5: Seguridad JWT (401 / 403)
+### =========================================================================
+
+### 11. Sin token -> 401 Unauthorized
+GET {{baseUrl}}/productos
+
+### 12. Token invalido / mal formado -> 401 Unauthorized
+GET {{baseUrl}}/productos
+Authorization: Bearer esto-no-es-un-token-valido
+
+### 13. Token valido pero rol insuficiente (USER intentando crear) -> 403 Forbidden
+POST {{baseUrl}}/productos
+Authorization: Bearer TOKEN_USER
+Content-Type: application/json
+
+{
+  "nombre": "x",
+  "categoria": "x",
+  "stock": 1,
+  "precio": 1
+}
+
+### 14. Token valido pero rol insuficiente (USER intentando eliminar) -> 403 Forbidden
+DELETE {{baseUrl}}/productos/1
+Authorization: Bearer TOKEN_USER

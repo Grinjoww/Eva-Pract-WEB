@@ -1,0 +1,437 @@
+\documentclass[11pt,a4paper]{article}
+
+% --- Codificacion e idioma -------------------------------------------------
+% NOTA: se evita deliberadamente el paquete babel con el idioma espanol,
+% ya que requiere el paquete adicional "texlive-lang-spanish" que no
+% siempre esta instalado por defecto (riesgo de romper la compilacion en
+% una maquina distinta). Los textos fijos en espanol (indice, tablas,
+% referencias) se traducen manualmente mas abajo; el contenido del
+% documento ya esta redactado en espanol de todas formas.
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+
+% --- Layout y utilidades ----------------------------------------------------
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{fancyhdr}
+
+\hypersetup{
+    colorlinks = true,
+    linkcolor  = black,
+    urlcolor   = blue,
+    citecolor  = black,
+    pdftitle   = {Informe Tecnico - Sistema de Inventario Mercado Municipal de Quevedo},
+    pdfauthor  = {Estudiante UTEQ}
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{Aplicaciones Web -- Ingenieria de Software -- UTEQ}
+\fancyhead[R]{Examen Parcial -- Informe Tecnico}
+\fancyfoot[C]{\thepage}
+\setlength{\headheight}{14pt}
+
+% Traduccion manual de textos fijos (sin depender de babel/spanish)
+\renewcommand{\contentsname}{Indice}
+\renewcommand{\tablename}{Tabla}
+\renewcommand{\refname}{Referencias}
+
+% --- Estilo para bloques de codigo / SQL / JSON -----------------------------
+\definecolor{codebg}{RGB}{244,244,244}
+\definecolor{codeborder}{RGB}{200,200,200}
+
+\lstdefinestyle{codigo}{
+    backgroundcolor=\color{codebg},
+    basicstyle=\ttfamily\footnotesize,
+    breaklines=true,
+    frame=single,
+    rulecolor=\color{codeborder},
+    numbers=none,
+    tabsize=2,
+    columns=fullflexible,
+    keepspaces=true
+}
+\lstset{style=codigo}
+
+\title{\Large \textbf{Sistema de Gestion de Inventario} \\ \large Mercado Municipal de Quevedo}
+\author{}
+\date{}
+
+\begin{document}
+
+% =============================================================================
+% CARATULA
+% =============================================================================
+\begin{titlepage}
+    \centering
+    \vspace*{1cm}
+
+    {\large Universidad Tecnica Estatal de Quevedo\par}
+    {\large Facultad de Ciencias de la Computacion y Diseno Digital\par}
+    {\large Carrera de Ingenieria de Software (Redisenio)\par}
+    \vspace{0.5cm}
+    {\normalsize Aplicaciones Web -- Quinto Nivel\par}
+    {\normalsize Periodo Academico Presencial 2026-2027 (PPA)\par}
+
+    \vspace{2cm}
+    \rule{\linewidth}{0.5pt}
+    \vspace{0.5cm}
+    {\Huge \textbf{Informe Tecnico}\par}
+    \vspace{0.3cm}
+    {\Large Sistema de Gestion de Inventario\par}
+    {\Large Mercado Municipal de Quevedo\par}
+    \vspace{0.3cm}
+    {\large Examen Parcial -- Parte Practica\par}
+    \rule{\linewidth}{0.5pt}
+
+    \vspace{2cm}
+    \begin{tabular}{ll}
+        \textbf{Apellidos y nombres:} & [MARISCAL CABRERA JAIME JOSUÉ] \\[4pt]
+        \textbf{Cedula:}              & [1250710835] \\[4pt]
+        \textbf{Paralelo:}            & [A] \\[4pt]
+        \textbf{Asignatura:}          & Aplicaciones Web \\[4pt]
+        \textbf{Fecha del examen:}    & [24/7/2026] \\[4pt]
+        \textbf{Docente:}             & Dr. Gleiston Ciceron Guerrero Ulloa, Ph.D. \\
+    \end{tabular}
+
+    \vspace{2cm}
+    \fbox{
+        \begin{minipage}{0.9\linewidth}
+            \centering
+            \vspace{0.3cm}
+            \textbf{Repositorio del proyecto (URL en una sola linea):}\\[6pt]
+            \url{}
+            \vspace{0.3cm}
+        \end{minipage}
+    }
+
+    \vfill
+    {\small Este documento sirve como caratula de identificacion para el
+    criterio de piso P1 y como portada del informe tecnico (criterio P2).
+    \textbf{Reemplazar el enlace de arriba por la URL real del repositorio
+    publico antes de compilar la version final.}\par}
+
+\end{titlepage}
+
+\tableofcontents
+\newpage
+
+% =============================================================================
+\section{Introduccion}
+% =============================================================================
+
+El Municipio de Quevedo requiere digitalizar el control de productos del
+mercado central. Este informe documenta el diseno, la implementacion y la
+verificacion de un servicio web REST construido con Spring Boot~3 sobre
+Java~21~LTS, que expone el recurso \texttt{Producto} bajo un contrato JSON
+uniforme, valida la entrada en el servidor, aplica borrado logico, integra
+el patron cache-aside con Redis y protege sus operaciones con autenticacion
+y autorizacion basadas en JSON Web Token (JWT)~\cite{rfc7519}.
+
+El trabajo cubre los cinco requisitos funcionales exigidos por el
+enunciado del examen parcial, y se enmarca en los conocimientos de
+construccion de software y calidad descritos por el SWEBOK
+Guide~\cite{swebok2024}, como prerrequisito directo del Proyecto Fin de
+Curso:
+
+\begin{enumerate}[label=R\arabic*.]
+    \item Listado paginado de productos activos, con envoltura de respuesta uniforme.
+    \item Creacion de productos con validacion de entrada en el servidor.
+    \item Eliminacion logica (soft delete) de productos.
+    \item Patron cache-aside con Redis sobre el listado de productos.
+    \item Seguridad basada en JWT con autorizacion por roles.
+\end{enumerate}
+
+% =============================================================================
+\section{Arquitectura y decisiones de diseno}
+% =============================================================================
+
+\subsection{Arquitectura por capas}
+
+El proyecto sigue una arquitectura por capas clasica, con responsabilidades
+claramente separadas y una unica direccion de dependencia (controlador
+$\rightarrow$ servicio $\rightarrow$ repositorio), tal como recomiendan
+Martin~\cite{martin2017} y Richards y Ford~\cite{richards2020}, y
+siguiendo las convenciones idiomaticas de Spring Boot descritas por
+Walls~\cite{walls2022} (inyeccion de dependencias por constructor,
+starters de configuracion automatica, DTOs separados de las entidades
+JPA):
+
+\begin{itemize}
+    \item \textbf{Controlador} (\texttt{ProductoController}, \texttt{AuthController}):
+          expone los endpoints REST, delega toda la logica de negocio al
+          servicio y no contiene acceso a datos.
+    \item \textbf{Servicio} (\texttt{ProductoServiceImpl}): contiene las
+          reglas de negocio (paginacion, soft delete, cache-aside) y
+          orquesta al repositorio.
+    \item \textbf{Repositorio} (\texttt{ProductoRepository},
+          \texttt{UsuarioRepository}): unico punto de acceso a la base de
+          datos, mediante Spring Data JPA. Ninguna consulta se concatena
+          manualmente con datos del usuario (se usan siempre parametros
+          nombrados o derivados de metodo), evitando el riesgo de inyeccion
+          SQL descrito en OWASP Top 10:2021 -- A03:2021 Injection~\cite{owasp2021}.
+\end{itemize}
+
+\subsection{Estilo arquitectonico REST}
+
+La API sigue los principios de estilo arquitectonico REST descritos por
+Fielding~\cite{fielding2000}: recursos identificados por URI
+(\texttt{/api/v1/productos}), operaciones mapeadas a verbos HTTP (GET,
+POST, DELETE) y ausencia de estado de sesion en el servidor (autenticacion
+stateless mediante JWT).
+
+% =============================================================================
+\section{Modelo de datos}
+% =============================================================================
+
+El esquema se define explicitamente en \texttt{db/schema.sql} (tambien
+incluido en \texttt{src/main/resources/schema.sql} para que Spring Boot lo
+ejecute automaticamente al arrancar). Hibernate se configura en modo
+\texttt{validate}: no genera el esquema, solo valida que las entidades
+JPA coincidan con las tablas reales.
+
+\subsection{Tabla \texttt{productos}}
+
+\begin{lstlisting}[language=SQL]
+CREATE TABLE IF NOT EXISTS productos (
+    id         BIGSERIAL PRIMARY KEY,
+    nombre     VARCHAR(100)   NOT NULL,
+    categoria  VARCHAR(50)    NOT NULL,
+    stock      INTEGER        NOT NULL CHECK (stock >= 0),
+    precio     DECIMAL(10, 2) NOT NULL CHECK (precio >= 0.01),
+    activo     BOOLEAN        NOT NULL DEFAULT TRUE,
+    creado_en  TIMESTAMPTZ    NOT NULL DEFAULT now()
+);
+\end{lstlisting}
+
+Las restricciones \texttt{CHECK} se aplican a nivel de base de datos como
+defensa adicional, ademas de la validacion de Bean Validation en el DTO de
+entrada (seccion~\ref{sec:validacion}).
+
+\subsection{Tablas \texttt{usuarios} y \texttt{usuario\_roles}}
+
+Los usuarios de autenticacion tambien se persisten en PostgreSQL (no estan
+hardcodeados en el codigo Java), con la contrasena cifrada mediante BCrypt:
+
+\begin{lstlisting}[language=SQL]
+CREATE TABLE IF NOT EXISTS usuarios (
+    id       BIGSERIAL PRIMARY KEY,
+    username VARCHAR(50)  NOT NULL UNIQUE,
+    password VARCHAR(100) NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS usuario_roles (
+    usuario_id BIGINT      NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+    rol        VARCHAR(20) NOT NULL,
+    PRIMARY KEY (usuario_id, rol)
+);
+\end{lstlisting}
+
+\texttt{db/seed.sql} inserta dos usuarios de prueba con hash BCrypt real
+(generado con costo 10): \texttt{admin} (roles \texttt{ROLE\_ADMIN} y
+\texttt{ROLE\_USER}) y \texttt{usuario} (solo \texttt{ROLE\_USER}).
+
+% =============================================================================
+\section{Contrato de la API}
+% =============================================================================
+
+Todas las respuestas comparten la misma envoltura JSON, inspirada en el
+espiritu de uniformidad de \emph{Problem Details for HTTP
+APIs}~\cite{rfc7807}, aunque adaptada al formato especifico exigido por el
+enunciado:
+
+\begin{lstlisting}
+{ "success": bool, "data": T, "message": string,
+  "meta": object | ausente, "errors": array | ausente }
+\end{lstlisting}
+
+\texttt{data} y \texttt{message} siempre se serializan (incluso cuando
+\texttt{data} es \texttt{null}); \texttt{meta} solo aparece en el listado
+paginado y \texttt{errors} solo aparece en las respuestas 400 de
+validacion.
+
+\subsection{Listado paginado -- 200 OK}
+\begin{lstlisting}
+GET /api/v1/productos?page=0&size=10&sort=nombre,asc
+
+{
+  "success": true,
+  "data": [ { "id": 1, "nombre": "Arroz flor", "categoria": "Granos",
+              "stock": 120, "precio": 0.95, "activo": true,
+              "creadoEn": "2026-07-24T09:15:00-05:00" } ],
+  "message": "Productos obtenidos exitosamente",
+  "meta": { "page": 0, "size": 10, "totalElements": 57, "totalPages": 6 }
+}
+\end{lstlisting}
+
+\subsection{Creacion invalida -- 400 Bad Request} \label{sec:validacion}
+\begin{lstlisting}
+{
+  "success": false,
+  "data": null,
+  "message": "Error de validacion",
+  "errors": [
+    { "field": "nombre", "message": "no debe estar vacio" },
+    { "field": "precio", "message": "debe ser mayor o igual a 0.01" }
+  ]
+}
+\end{lstlisting}
+
+La validacion se implementa con \texttt{@Valid} sobre el DTO de entrada
+(\texttt{ProductoRequestDTO}), anotado con \texttt{@NotBlank},
+\texttt{@Min(0)} y \texttt{@DecimalMin("0.01")}. Un
+\texttt{@RestControllerAdvice} (\texttt{GlobalExceptionHandler}) captura
+\texttt{MethodArgumentNotValidException} y construye la lista de errores
+por campo.
+
+% =============================================================================
+\section{Seguridad: autenticacion y autorizacion con JWT}
+% =============================================================================
+
+La API se protege con JSON Web Token~\cite{rfc7519}. El flujo es el
+siguiente:
+
+\begin{enumerate}
+    \item \texttt{POST /api/v1/auth/login} autentica usuario/contrasena
+          contra la base de datos (\texttt{UserDetailsServiceImpl} +
+          \texttt{DaoAuthenticationProvider} + \texttt{BCryptPasswordEncoder})
+          y devuelve un token firmado con HS256, con los roles del usuario
+          como \emph{claim}.
+    \item \texttt{JwtAuthenticationFilter} valida el token en cada peticion
+          y reconstruye la autenticacion en el \texttt{SecurityContext}.
+    \item \texttt{SecurityConfig} exige \texttt{ROLE\_USER} para el GET y
+          \texttt{ROLE\_ADMIN} para el POST y el DELETE.
+\end{enumerate}
+
+Los casos de error se resuelven con manejadores dedicados, evitando
+confundir autenticacion con autorizacion (un error frecuente senalado en
+OWASP Top 10:2021~\cite{owasp2021}):
+
+\begin{itemize}
+    \item \textbf{401 Unauthorized} (\texttt{JwtAuthenticationEntryPoint}):
+          la peticion no trae token, o el token es invalido/expirado.
+    \item \textbf{403 Forbidden} (\texttt{CustomAccessDeniedHandler}): el
+          token es valido, pero el rol del usuario no alcanza para la
+          operacion solicitada.
+\end{itemize}
+
+El secreto de firma (\texttt{JWT\_SECRET}) \textbf{no se encuentra
+embebido en el repositorio}: se lee exclusivamente de una variable de
+entorno, provista mediante un archivo \texttt{.env} (no versionado) a
+partir de la plantilla \texttt{.env.example} con un valor ficticio.
+
+% =============================================================================
+\section{Cache-aside con Redis}
+% =============================================================================
+
+El listado de productos aplica el patron cache-aside descrito por
+Kleppmann~\cite{kleppmann2017}:
+
+\begin{itemize}
+    \item \texttt{@Cacheable(value = "productos", key = ...)} sobre
+          \texttt{ProductoServiceImpl.listar(...)}: en un \emph{cache miss}
+          consulta PostgreSQL, arma la respuesta paginada y la almacena en
+          Redis; en un \emph{cache hit} la sirve directamente desde Redis
+          sin tocar la base de datos.
+    \item \texttt{@CacheEvict(value = "productos", allEntries = true)}
+          sobre \texttt{crear(...)} y \texttt{eliminar(...)}: cualquier
+          escritura invalida todo el cache de listados, para no servir
+          datos obsoletos tras un alta o una baja.
+    \item El TTL del espacio de nombres \texttt{productos} se configura en
+          10 minutos (\texttt{application.yml}), como limite superior de
+          obsolescencia si ninguna escritura ocurre.
+\end{itemize}
+
+La clave de cache (\texttt{page-size-sort}) evita colisiones entre
+distintas combinaciones de paginacion y orden, ya que cada una es un
+resultado distinto que debe cachearse por separado.
+
+% =============================================================================
+\section{Reproducibilidad}
+% =============================================================================
+
+El repositorio se puede clonar y ejecutar en una maquina limpia con un
+unico comando, sin configuracion manual adicional (mas alla de copiar la
+plantilla de variables de entorno):
+
+\begin{lstlisting}[language=bash]
+git clone https://github.com/USUARIO/inventario-mercado-APELLIDO.git
+cd inventario-mercado-APELLIDO
+cp .env.example .env
+docker compose up -d --build
+\end{lstlisting}
+
+Este comando levanta tres contenedores: \texttt{postgres} (con
+\emph{healthcheck}), \texttt{redis} (con \emph{healthcheck}) y \texttt{app}
+(construido desde el \texttt{Dockerfile} multi-stage del proyecto, que
+compila con Maven en la primera etapa y ejecuta con un JRE 21 liviano en
+la segunda). El servicio \texttt{app} espera a que \texttt{postgres} y
+\texttt{redis} esten saludables (\texttt{condition: service\_healthy})
+antes de arrancar.
+
+Al iniciar, la aplicacion ejecuta automaticamente \texttt{schema.sql} y
+\texttt{data.sql} (identicos a \texttt{db/schema.sql} y
+\texttt{db/seed.sql}), dejando la base de datos lista con la tabla
+\texttt{productos} vacia y los dos usuarios de prueba ya sembrados.
+
+% =============================================================================
+\section{Pruebas realizadas}
+% =============================================================================
+
+La coleccion \texttt{docs/requests.http} ejercita los cinco requisitos y
+los cuatro codigos de estado de error exigidos. Siguiendo el principio de
+reproducibilidad de la experimentacion en ingenieria de software descrito
+por Wohlin et al.~\cite{wohlin2012}, cada caso de prueba se documenta con
+su entrada, su codigo HTTP esperado y su criterio de verificacion, de modo
+que un tercero pueda repetirlo exactamente. La tabla~\ref{tab:pruebas}
+resume los casos cubiertos; las capturas de evidencia correspondientes se
+encuentran en \texttt{docs/capturas/}.
+
+\begin{table}[h]
+    \centering
+    \begin{tabular}{@{}p{5.5cm}p{2cm}p{6.5cm}@{}}
+        \toprule
+        \textbf{Caso} & \textbf{HTTP} & \textbf{Verificacion} \\
+        \midrule
+        Listado paginado, con token USER          & 200 & \texttt{meta} con \texttt{totalElements}/\texttt{totalPages} correctos \\
+        Creacion con datos validos, token ADMIN    & 201 & Header \texttt{Location} presente \\
+        Creacion con datos invalidos               & 400 & \texttt{errors} con \texttt{field}/\texttt{message} por cada violacion \\
+        Eliminacion de producto existente, ADMIN    & 200 & \texttt{activo=false} en la fila (no se borra) \\
+        Eliminacion de id inexistente                & 404 & Mensaje descriptivo \\
+        Peticion sin token                          & 401 & Mensaje de no autorizado \\
+        Peticion con token invalido                 & 401 & Mismo manejo que sin token \\
+        POST/DELETE con token de rol USER            & 403 & Mensaje de acceso denegado \\
+        Misma consulta repetida (paginacion)         & --  & Segunda vez sin log de \emph{cache miss} \\
+        Alta de producto tras una lectura cacheada   & --  & Siguiente lectura vuelve a dar \emph{cache miss} \\
+        \bottomrule
+    \end{tabular}
+    \caption{Casos de prueba ejecutados con \texttt{docs/requests.http}.}
+    \label{tab:pruebas}
+\end{table}
+
+% =============================================================================
+\section{Conclusiones}
+% =============================================================================
+
+El servicio implementado cubre los cinco requisitos funcionales exigidos
+manteniendo una arquitectura por capas limpia, un contrato de respuesta
+uniforme y verificable, y dos mecanismos transversales -- cache-aside con
+Redis y seguridad JWT basada en roles -- correctamente aislados en sus
+propias capas de configuracion. El uso de Docker Compose con un unico
+comando de arranque, junto con un esquema de base de datos versionado
+(\texttt{schema.sql}/\texttt{seed.sql}) y una coleccion de peticiones
+reproducible (\texttt{requests.http}), garantiza que el proyecto pueda
+verificarse de forma independiente desde una clonacion limpia del
+repositorio, tal como exige el criterio de piso P3.
+
+% =============================================================================
+\bibliographystyle{plain}
+\bibliography{referencias}
+
+\end{document}
